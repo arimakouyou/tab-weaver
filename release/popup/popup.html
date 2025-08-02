@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TabList</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body role="application" aria-labelledby="app-title" aria-describedby="app-description">
+    <div class="container">
+        <header class="header">
+            <h1 id="app-title">📋 TabList</h1>
+            <div class="sr-only" id="app-description">
+                現在開いているタブをMarkdown形式で表示コピーする拡張機能です。
+            </div>
+        </header>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="format-select">Format:</label>
+                <select id="format-select">
+                    <option value="list">List</option>
+                    <option value="table">Table</option>
+                    <option value="grouped">Grouped</option>
+                    <option value="tab-groups">Tab Groups</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="scope-select">Scope:</label>
+                <select id="scope-select">
+                    <option value="current">Current Window</option>
+                    <option value="all">All Windows</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="preview-area">
+            <div class="preview-header">
+                <span>Preview</span>
+                <div class="tab-count" id="tab-count">0 tabs</div>
+            </div>
+            <div class="preview-content" id="preview-content">
+                <div class="loading">Loading tabs...</div>
+            </div>
+        </div>
+        
+        <div class="actions">
+            <button id="copy-btn" class="btn btn-primary">
+                📋 Copy
+            </button>
+            <button id="refresh-btn" class="btn btn-secondary">
+                🔄 Refresh
+            </button>
+        </div>
+        
+        <div class="feedback" id="feedback"></div>
+    </div>
+    
+    <script src="tab-manager.js"></script>
+    <script src="markdown-formatter.js"></script>
+    <script src="clipboard-manager.js"></script>
+    <script src="popup.js"></script>
+</body>
+</html>

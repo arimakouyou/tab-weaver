@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "TabList",
+  "version": "1.0.0",
+  "description": "現在開いているタブをMarkDown形式で表示するChrome拡張機能",
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "storage",
+    "contextMenus",
+    "notifications",
+    "scripting"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "TabList",
+    "default_icon": {
+      "16": "assets/icons/icon-16.png",
+      "32": "assets/icons/icon-32.png",
+      "48": "assets/icons/icon-48.png",
+      "128": "assets/icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "assets/icons/icon-16.png",
+    "32": "assets/icons/icon-32.png",
+    "48": "assets/icons/icon-48.png",
+    "128": "assets/icons/icon-128.png"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js"
+  }
+}
