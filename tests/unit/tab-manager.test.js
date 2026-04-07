@@ -282,7 +282,11 @@ describe('TabManager', () => {
 
     test('URLをサニタイズする', () => {
       expect(tabManager.sanitizeUrl('javascript:alert("xss")')).toBe('about:blank');
+      expect(tabManager.sanitizeUrl('vbscript:msgbox')).toBe('about:blank');
+      expect(tabManager.sanitizeUrl('data:text/html,<script>alert(1)</script>')).toBe('about:blank');
       expect(tabManager.sanitizeUrl('https://example.com')).toBe('https://example.com');
+      expect(tabManager.sanitizeUrl('http://example.com')).toBe('http://example.com');
+      expect(tabManager.sanitizeUrl('file:///path/to/file.html')).toBe('file:///path/to/file.html');
       expect(tabManager.sanitizeUrl('invalid-url')).toBe('about:blank');
     });
 

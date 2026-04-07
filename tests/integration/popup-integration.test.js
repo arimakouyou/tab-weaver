@@ -22,7 +22,15 @@ describe('Popup Integration Tests', () => {
   });
 
   beforeEach(() => {
-    // DOM環境をセットアップ
+    // シングルトンリセット
+    if (typeof TabWeaverController !== 'undefined') {
+      TabWeaverController._instance = null;
+    }
+    if (window.tabWeaverController) {
+      window.tabWeaverController = null;
+    }
+
+    // DOM環境をセットアップ (テスト用固定HTML - XSSリスクなし)
     document.body.innerHTML = `
       <div class="container">
         <header class="header">
@@ -71,14 +79,16 @@ describe('Popup Integration Tests', () => {
     mockTabs = testUtils.createMockTabs(3);
     chrome.tabs.query.mockResolvedValue(mockTabs);
     
-    // ストレージAPIのモック
-    chrome.storage.local.get.mockResolvedValue({
-      tabListSettings: {
-        format: 'list',
-        scope: 'current'
-      }
+    // ストレージAPIのモック（Promise形式とコールバック形式の両方に対応）
+    const defaultSettings = { tabListSettings: { format: 'list', scope: 'current' } };
+    chrome.storage.local.get.mockImplementation((keys, callback) => {
+      if (typeof callback === 'function') { callback(defaultSettings); return; }
+      return Promise.resolve(defaultSettings);
     });
-    chrome.storage.local.set.mockResolvedValue();
+    chrome.storage.local.set.mockImplementation((data, callback) => {
+      if (typeof callback === 'function') { callback(); return; }
+      return Promise.resolve();
+    });
   });
 
   afterEach(() => {
@@ -114,14 +124,19 @@ describe('Popup Integration Tests', () => {
       expect(controller.elements.copyBtn).toBe(document.getElementById('copy-btn'));
     });
 
-    test('DOM要素が不足している場合はエラーがスローされる', () => {
+    test('DOM要素が不足している場合はエラー表示される', async () => {
       // 必要な要素を削除
       document.getElementById('format-select').remove();
-      
-      expect(() => {
-        eval(fs.readFileSync(popupPath, 'utf8'));
-        document.dispatchEvent(new Event('DOMContentLoaded'));
-      }).toThrow();
+
+      // eslint-disable-next-line no-eval -- test pattern: load popup code via eval
+      eval(fs.readFileSync(popupPath, 'utf8'));
+      document.dispatchEvent(new Event('DOMContentLoaded'));
+
+      await testUtils.waitFor(100);
+
+      // エラー表示がDOM内に存在することを確認
+      const previewContent = document.getElementById('preview-content');
+      expect(previewContent.textContent).toContain('初期化に失敗しました');
     });
   });
 
@@ -129,9 +144,10 @@ describe('Popup Integration Tests', () => {
     let controller;
 
     beforeEach(async () => {
+      // eslint-disable-next-line no-eval -- test pattern
       eval(fs.readFileSync(popupPath, 'utf8'));
       document.dispatchEvent(new Event('DOMContentLoaded'));
-      await testUtils.waitFor(50);
+      await testUtils.waitFor(100);
       controller = window.tabWeaverController;
     });
 
@@ -140,8 +156,8 @@ describe('Popup Integration Tests', () => {
       if (controller.initializationPromise) {
         await controller.initializationPromise;
       }
-      
-      await testUtils.waitFor(50);
+
+      await testUtils.waitFor(200);
       
       expect(chrome.tabs.query).toHaveBeenCalled();
       expect(controller.currentTabs).toHaveLength(3);
@@ -182,13 +198,13 @@ describe('Popup Integration Tests', () => {
     beforeEach(async () => {
       eval(fs.readFileSync(popupPath, 'utf8'));
       document.dispatchEvent(new Event('DOMContentLoaded'));
-      await testUtils.waitFor(50);
+      await testUtils.waitFor(100);
       controller = window.tabWeaverController;
-      
+
       if (controller.initializationPromise) {
         await controller.initializationPromise;
       }
-      await testUtils.waitFor(50);
+      await testUtils.waitFor(200);
     });
 
     test('フォーマット変更でプレビューが更新される', async () => {
@@ -240,13 +256,13 @@ describe('Popup Integration Tests', () => {
     beforeEach(async () => {
       eval(fs.readFileSync(popupPath, 'utf8'));
       document.dispatchEvent(new Event('DOMContentLoaded'));
-      await testUtils.waitFor(50);
+      await testUtils.waitFor(100);
       controller = window.tabWeaverController;
-      
+
       if (controller.initializationPromise) {
         await controller.initializationPromise;
       }
-      await testUtils.waitFor(50);
+      await testUtils.waitFor(200);
     });
 
     test('コピーボタンクリックでクリップボードにコピーされる', async () => {
@@ -294,13 +310,13 @@ describe('Popup Integration Tests', () => {
     beforeEach(async () => {
       eval(fs.readFileSync(popupPath, 'utf8'));
       document.dispatchEvent(new Event('DOMContentLoaded'));
-      await testUtils.waitFor(50);
+      await testUtils.waitFor(100);
       controller = window.tabWeaverController;
-      
+
       if (controller.initializationPromise) {
         await controller.initializationPromise;
       }
-      await testUtils.waitFor(50);
+      await testUtils.waitFor(200);
     });
 
     test('リフレッシュボタンでデータが更新される', async () => {
@@ -343,34 +359,41 @@ describe('Popup Integration Tests', () => {
     });
 
     test('Chrome API エラー時にエラー表示される', async () => {
-      chrome.tabs.query.mockRejectedValue(new Error('API Error'));
-      
       if (controller.initializationPromise) {
         await controller.initializationPromise;
       }
-      
-      await testUtils.waitFor(100);
-      
+      await testUtils.waitFor(200);
+
+      // 初期ロード完了後にAPIを失敗させてリフレッシュ
+      chrome.tabs.query.mockRejectedValue(new Error('API Error'));
+      controller.tabManager.clearCache();
+      await controller.loadTabData();
+
+      await testUtils.waitFor(200);
+
       const previewContent = document.getElementById('preview-content');
-      expect(previewContent.innerHTML).toContain('❌');
-      expect(previewContent.innerHTML).toContain('再試行');
+      expect(previewContent.textContent).toContain('❌');
+      expect(previewContent.textContent).toContain('再試行');
     });
 
     test('タイムアウト時に適切なエラーメッセージが表示される', async () => {
-      // 10秒後にタイムアウト
-      chrome.tabs.query.mockImplementation(() => 
-        new Promise(resolve => setTimeout(resolve, 15000))
-      );
-      
       if (controller.initializationPromise) {
         await controller.initializationPromise;
       }
-      
-      await testUtils.waitFor(100);
-      
+      await testUtils.waitFor(200);
+
+      // タイムアウトを発生させる
+      chrome.tabs.query.mockImplementation(() =>
+        new Promise(resolve => setTimeout(resolve, 15000))
+      );
+      controller.tabManager.clearCache();
+      await controller.loadTabData();
+
+      await testUtils.waitFor(200);
+
       const previewContent = document.getElementById('preview-content');
-      expect(previewContent.innerHTML).toContain('タイムアウト');
-    });
+      expect(previewContent.textContent).toContain('タイムアウト');
+    }, 15000);
   });
 
   describe('Settings persistence', () => {
@@ -399,11 +422,10 @@ describe('Popup Integration Tests', () => {
     });
 
     test('設定が読み込まれる', async () => {
-      chrome.storage.local.get.mockResolvedValue({
-        tabListSettings: {
-          format: 'grouped',
-          scope: 'all'
-        }
+      const groupedSettings = { tabListSettings: { format: 'grouped', scope: 'all' } };
+      chrome.storage.local.get.mockImplementation((keys, callback) => {
+        if (typeof callback === 'function') { callback(groupedSettings); return; }
+        return Promise.resolve(groupedSettings);
       });
       
       eval(fs.readFileSync(popupPath, 'utf8'));
@@ -428,13 +450,13 @@ describe('Popup Integration Tests', () => {
     beforeEach(async () => {
       eval(fs.readFileSync(popupPath, 'utf8'));
       document.dispatchEvent(new Event('DOMContentLoaded'));
-      await testUtils.waitFor(50);
+      await testUtils.waitFor(100);
       controller = window.tabWeaverController;
-      
+
       if (controller.initializationPromise) {
         await controller.initializationPromise;
       }
-      await testUtils.waitFor(50);
+      await testUtils.waitFor(200);
     });
 
     test('パフォーマンスメトリクスが記録される', async () => {

@@ -141,7 +141,8 @@ class MarkdownFormatter {
             includeHeader = true,
             includeStats = true,
             includeTimestamp = true,
-            sortDomains = true
+            sortDomains = true,
+            preGrouped = null
         } = options;
 
         let markdown = '';
@@ -159,8 +160,8 @@ class MarkdownFormatter {
         if (tabs.length === 0) {
             markdown += '*タブが見つかりませんでした*\n\n';
         } else {
-            // ドメイン別にグループ化
-            const grouped = this.groupByDomain(tabs);
+            // ドメイン別にグループ化（preGroupedがあればそれを使用）
+            const grouped = preGrouped || this.groupByDomain(tabs);
             const domains = sortDomains ? 
                 Object.keys(grouped).sort() : 
                 Object.keys(grouped);
@@ -292,14 +293,15 @@ class MarkdownFormatter {
 
     /**
      * タブをドメイン別にグループ化
+     * @deprecated TabManager.groupTabsByDomain() を使用してください
      * @param {Array} tabs - タブ情報の配列
      * @returns {Object} ドメイン別にグループ化されたタブ
      */
     groupByDomain(tabs) {
         const grouped = {};
-        
+
         tabs.forEach(tab => {
-            const domain = tab.domain;
+            const domain = tab.domain || 'unknown';
             if (!grouped[domain]) {
                 grouped[domain] = [];
             }

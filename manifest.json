@@ -9,7 +9,8 @@
     "storage",
     "contextMenus",
     "notifications",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "action": {
     "default_popup": "popup/popup.html",
