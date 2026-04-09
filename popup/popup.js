@@ -622,11 +622,18 @@ class TabWeaverController {
         this._usageBuffer = [];
 
         chrome.storage.local.get(['tabListUsage'], (result) => {
-            if (chrome.runtime.lastError) { this._isFlushing = false; return; }
+            if (chrome.runtime.lastError) {
+                this._usageBuffer = buffer.concat(this._usageBuffer || []);
+                this._isFlushing = false;
+                return;
+            }
             const currentUsage = result.tabListUsage || [];
             currentUsage.push(...buffer);
             const recentUsage = currentUsage.slice(-100);
             chrome.storage.local.set({ tabListUsage: recentUsage }, () => {
+                if (chrome.runtime.lastError) {
+                    this._usageBuffer = buffer.concat(this._usageBuffer || []);
+                }
                 this._isFlushing = false;
                 // flush中に追加されたバッファがあれば再flush
                 if (this._usageBuffer && this._usageBuffer.length > 0) {

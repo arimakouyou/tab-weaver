@@ -203,11 +203,11 @@ class ClipboardManager {
      */
     generateId() {
         if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-            const array = new Uint32Array(2);
-            crypto.getRandomValues(array);
-            return Array.from(array, n => n.toString(36)).join('').substring(0, 9);
+            const bytes = new Uint8Array(5);
+            crypto.getRandomValues(bytes);
+            return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('').substring(0, 9);
         }
-        return Math.random().toString(36).substring(2, 11);
+        return Math.floor(Math.random() * Math.pow(36, 9)).toString(36).padStart(9, '0');
     }
 
     /**

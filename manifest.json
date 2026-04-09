@@ -28,6 +28,9 @@
     "48": "assets/icons/icon-48.png",
     "128": "assets/icons/icon-128.png"
   },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https:;"
+  },
   "background": {
     "service_worker": "background/service-worker.js"
   }

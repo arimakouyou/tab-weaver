@@ -70,13 +70,13 @@ describe('ClipboardManager', () => {
       expect(history[0].text).toBe(testText);
     });
 
-    test('Clipboard API失敗時にfalseを返しフィードバックを表示する', async () => {
+    test('Clipboard API失敗時にfalseを返す', async () => {
       // Clipboard APIを失敗させる
       navigator.clipboard.writeText.mockRejectedValue(new Error('Clipboard API failed'));
 
       const result = await clipboardManager.copyToClipboard('test', { showFeedback: false });
 
-      // Clipboard APIとフォールバック両方が失敗するとfalseが返る
+      // Clipboard APIが存在するが reject した場合、即座にfalseが返る
       expect(result).toBe(false);
     });
 
