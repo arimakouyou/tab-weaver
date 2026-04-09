@@ -3,8 +3,6 @@
  * バックグラウンドで動作するサービスワーカー
  */
 
-console.log('Service Worker initialized');
-
 // Service Worker の起動時の処理
 self.addEventListener('install', () => {
     console.log('Service Worker installing');
@@ -93,6 +91,7 @@ function migrateSettings(previousVersion) {
 
 // バージョン比較関数
 function compareVersions(a, b) {
+    if (!a || !b) return a ? 1 : b ? -1 : 0;
     const aParts = a.split('.').map(Number);
     const bParts = b.split('.').map(Number);
     
@@ -133,7 +132,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // 現在のタブをMarkdownでコピー
 async function copyCurrentTabAsMarkdown(tab) {
     try {
-        const markdown = `- [${escapeMarkdown(tab.title)}](${tab.url})`;
+        const markdown = `- [${escapeMarkdown(tab.title)}](${sanitizeUrl(tab.url)})`;
         
         // Service Worker環境でのクリップボードアクセス
         await writeToClipboard(markdown);
@@ -142,7 +141,7 @@ async function copyCurrentTabAsMarkdown(tab) {
         
     } catch (error) {
         console.error('Failed to copy current tab:', error);
-        showNotification('コピーに失敗しました', error.message, 'error');
+        showNotification('コピーに失敗しました', error.message);
     }
 }
 
@@ -154,9 +153,14 @@ async function copyAllTabsAsMarkdown() {
         
         let markdown = `## 📋 開いているタブ (${timestamp})\n\n`;
         
+        // popup側のTabManager.excludePatternsと同等のフィルタ
+        const excludePatterns = [
+            'chrome://', 'chrome-extension://', 'moz-extension://',
+            'edge://', 'opera://', 'about:', 'data:'
+        ];
         tabs.forEach(tab => {
-            if (tab.url && !tab.url.startsWith('chrome://')) {
-                markdown += `- [${escapeMarkdown(tab.title)}](${tab.url})\n`;
+            if (tab.url && !excludePatterns.some(p => tab.url.startsWith(p))) {
+                markdown += `- [${escapeMarkdown(tab.title)}](${sanitizeUrl(tab.url)})\n`;
             }
         });
         
@@ -170,7 +174,7 @@ async function copyAllTabsAsMarkdown() {
     } catch (error) {
         const errorMessage = handleTabError(error, 'copyAllTabs');
         console.error('Failed to copy all tabs:', error);
-        showNotification('コピーに失敗しました', errorMessage, 'error');
+        showNotification('コピーに失敗しました', errorMessage);
     }
 }
 
@@ -191,6 +195,7 @@ async function writeToClipboard(text) {
 }
 
 // Content Script経由でのクリップボード書き込み
+// Note: scripting 権限は executeScript によるクリップボードフォールバックに必要
 async function writeToClipboardViaContentScript(text) {
     try {
         // アクティブなタブを取得
@@ -214,24 +219,37 @@ async function writeToClipboardViaContentScript(text) {
     }
 }
 
+// URLサニタイズ処理（危険なプロトコルをブロック）
+function sanitizeUrl(url) {
+    try {
+        const urlObj = new URL(url);
+        const dangerousProtocols = ['javascript:', 'vbscript:', 'data:'];
+        if (dangerousProtocols.includes(urlObj.protocol)) {
+            return 'about:blank';
+        }
+        return url;
+    } catch {
+        return 'about:blank';
+    }
+}
+
 // Markdownエスケープ処理
 function escapeMarkdown(text) {
-    if (!text) return 'Untitled';
-    
-    // Markdownリンクのタイトル部分では、エスケープは不要
-    // HTMLタグ除去のみで十分
-    return text;
+    if (!text || typeof text !== 'string') return 'Untitled';
+
+    // HTMLタグ除去 + Markdown特殊文字エスケープ（1パス）
+    return text.replace(/<[^>]*>/g, '').replace(/([\\*_\[\]()\-+.!#`><|])/g, '\\$1');
 }
 
 // 通知表示
-function showNotification(title, message, type = 'basic') {
+function showNotification(title, message) {
     chrome.storage.local.get(['tabListSettings'], (result) => {
         const settings = result.tabListSettings || {};
-        
+
         if (settings.showNotifications !== false) {
             chrome.notifications.create({
-                type: type,
-                iconUrl: '../assets/icons/icon48.png',
+                type: 'basic',
+                iconUrl: 'assets/icons/icon-48.png',
                 title: title,
                 message: message
             });
@@ -292,10 +310,13 @@ async function updateTabStatistics() {
     }
 }
 
-// 定期的な統計更新（1分間隔） - テスト環境では無効化
-if (typeof jest === 'undefined') {
-    setInterval(updateTabStatistics, 60000);
-}
+// 定期的な統計更新（1分間隔） - chrome.alarms APIで実現（MV3互換）
+chrome.alarms.create('updateTabStatistics', { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'updateTabStatistics') {
+        updateTabStatistics();
+    }
+});
 
 // メッセージハンドリング
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -321,26 +342,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // グローバルエラーハンドリング
 self.addEventListener('error', (event) => {
-    console.error('Service Worker global error:', event.error);
-    
-    // エラー情報をストレージに保存
+    console.error('Service Worker global error:', event.error?.message);
+
     chrome.storage.local.set({
         lastError: {
-            message: event.error?.message || 'Unknown error',
-            stack: event.error?.stack || '',
+            message: (event.error?.message || 'Unknown error').substring(0, 100),
             timestamp: Date.now()
         }
     });
 });
 
 self.addEventListener('unhandledrejection', (event) => {
-    console.error('Service Worker unhandled promise rejection:', event.reason);
-    
-    // エラー情報をストレージに保存
+    console.error('Service Worker unhandled promise rejection:', event.reason?.message);
+
     chrome.storage.local.set({
         lastError: {
-            message: event.reason?.message || 'Promise rejection',
-            stack: event.reason?.stack || '',
+            message: (event.reason?.message || 'Promise rejection').substring(0, 100),
             timestamp: Date.now()
         }
     });
@@ -398,4 +415,3 @@ async function safeExecute(operation, retries = 3, delay = 1000) {
     }
 }
 
-console.log('Service Worker initialized with enhanced error handling');

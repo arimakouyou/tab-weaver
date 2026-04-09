@@ -12,6 +12,11 @@
 
 class TabWeaverController {
     constructor() {
+        if (TabWeaverController._instance) {
+            return TabWeaverController._instance;
+        }
+        TabWeaverController._instance = this;
+
         this.tabManager = new TabManager();
         this.markdownFormatter = new MarkdownFormatter();
         this.clipboardManager = new ClipboardManager();
@@ -152,6 +157,12 @@ class TabWeaverController {
         
         // ウィンドウのフォーカス変更時の自動更新
         window.addEventListener('focus', this.handleWindowFocus.bind(this));
+
+        // ポップアップ終了時に使用統計をflush
+        window.addEventListener('beforeunload', () => this._flushUsageBuffer());
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') this._flushUsageBuffer();
+        });
     }
 
     /**
@@ -161,6 +172,8 @@ class TabWeaverController {
         if (e.ctrlKey || e.metaKey) {
             switch (e.key) {
                 case 'c':
+                    // テキスト選択時はブラウザのデフォルトコピー動作を優先
+                    if (window.getSelection && window.getSelection().toString()) return;
                     e.preventDefault();
                     this.copyToClipboard();
                     break;
@@ -195,13 +208,14 @@ class TabWeaverController {
     }
 
     /**
-     * ウィンドウフォーカス時の処理
+     * ウィンドウフォーカス時の処理（5秒クールダウン付き）
      */
     handleWindowFocus() {
-        // フォーカス時に自動更新（オプション）
-        if (!this.isLoading) {
-            this.refreshTabData();
-        }
+        if (this.isLoading) return;
+        const now = Date.now();
+        if (this._lastFocusRefresh && (now - this._lastFocusRefresh) < 5000) return;
+        this._lastFocusRefresh = now;
+        this.refreshTabData();
     }
 
     /**
@@ -245,19 +259,20 @@ class TabWeaverController {
 
         const startTime = performance.now();
         const timeout = 10000; // 10秒
-        
+        let timeoutId;
+
         try {
             this.setLoadingState(true);
-            
+
             // タイムアウト付きでタブデータを取得
-            const tabDataPromise = this.currentScope === 'current' 
+            const tabDataPromise = this.currentScope === 'current'
                 ? this.tabManager.getCurrentWindowTabs()
                 : this.tabManager.getAllTabs();
-                
+
             const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('タブデータの読み込み時間が上限を超えました')), timeout);
+                timeoutId = setTimeout(() => reject(new Error('タブデータの読み込み時間が上限を超えました')), timeout);
             });
-            
+
             const tabs = await Promise.race([tabDataPromise, timeoutPromise]);
             
             if (!Array.isArray(tabs)) {
@@ -285,6 +300,7 @@ class TabWeaverController {
             
             this.showError(errorMessage);
         } finally {
+            clearTimeout(timeoutId);
             this.setLoadingState(false);
         }
     }
@@ -330,7 +346,10 @@ class TabWeaverController {
             const formatters = {
                 list: () => this.markdownFormatter.formatAsList(this.currentTabs, options),
                 table: () => this.markdownFormatter.formatAsTable(this.currentTabs, options),
-                grouped: () => this.markdownFormatter.formatAsGrouped(this.currentTabs, options),
+                grouped: () => {
+                    const preGrouped = this.tabManager.groupTabsByDomain(this.currentTabs);
+                    return this.markdownFormatter.formatAsGrouped(this.currentTabs, { ...options, preGrouped });
+                },
                 'tab-groups': async () => {
                     try {
                         const groupedTabs = await this.tabManager.groupTabsByTabGroups(this.currentTabs);
@@ -444,9 +463,15 @@ class TabWeaverController {
      */
     setLoadingState(loading) {
         this.isLoading = loading;
-        
+
         if (loading) {
-            this.elements.previewContent.innerHTML = '<div class="loading">Loading tabs...</div>';
+            const loadingEl = document.createElement('div');
+            loadingEl.className = 'loading';
+            loadingEl.textContent = 'Loading tabs...';
+            while (this.elements.previewContent.firstChild) {
+                this.elements.previewContent.removeChild(this.elements.previewContent.firstChild);
+            }
+            this.elements.previewContent.appendChild(loadingEl);
             this.elements.copyBtn.disabled = true;
             this.elements.refreshBtn.disabled = true;
         } else {
@@ -463,20 +488,39 @@ class TabWeaverController {
     showError(message, details = '') {
         const errorElement = document.createElement('div');
         errorElement.className = 'error';
-        errorElement.innerHTML = `
-            <div class="error-icon">❌</div>
-            <div class="error-message">${message}</div>
-            ${details ? `<div class="error-details">${details}</div>` : ''}
-            <button class="error-retry" onclick="window.tabWeaverController.refreshTabData()">
-                🔄 再試行
-            </button>
-        `;
-        
+
+        const iconEl = document.createElement('div');
+        iconEl.className = 'error-icon';
+        iconEl.textContent = '❌';
+        errorElement.appendChild(iconEl);
+
+        const messageEl = document.createElement('div');
+        messageEl.className = 'error-message';
+        messageEl.textContent = message;
+        errorElement.appendChild(messageEl);
+
+        if (details) {
+            const detailsEl = document.createElement('div');
+            detailsEl.className = 'error-details';
+            detailsEl.textContent = details;
+            errorElement.appendChild(detailsEl);
+        }
+
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'error-retry';
+        retryBtn.textContent = '🔄 再試行';
+        retryBtn.addEventListener('click', () => {
+            window.tabWeaverController.refreshTabData();
+        });
+        errorElement.appendChild(retryBtn);
+
         // ARIA属性の設定
         errorElement.setAttribute('role', 'alert');
         errorElement.setAttribute('aria-live', 'polite');
-        
-        this.elements.previewContent.innerHTML = '';
+
+        while (this.elements.previewContent.firstChild) {
+            this.elements.previewContent.removeChild(this.elements.previewContent.firstChild);
+        }
         this.elements.previewContent.appendChild(errorElement);
         
         console.error('TabList Error:', { message, details });
@@ -545,7 +589,7 @@ class TabWeaverController {
     }
 
     /**
-     * 使用統計の記録
+     * 使用統計の記録（バッファリング + デバウンス書き込み）
      */
     recordUsage(action) {
         try {
@@ -557,19 +601,48 @@ class TabWeaverController {
                 timestamp: Date.now()
             };
 
-            // 簡単な使用統計をローカルストレージに記録
-            chrome.storage.local.get(['tabListUsage'], (result) => {
-                const currentUsage = result.tabListUsage || [];
-                currentUsage.push(usage);
-                
-                // 最新100件のみ保持
-                const recentUsage = currentUsage.slice(-100);
-                chrome.storage.local.set({ tabListUsage: recentUsage });
-            });
+            if (!this._usageBuffer) this._usageBuffer = [];
+            this._usageBuffer.push(usage);
 
+            if (this._usageFlushTimer) clearTimeout(this._usageFlushTimer);
+            this._usageFlushTimer = setTimeout(() => this._flushUsageBuffer(), 1000);
         } catch (error) {
             // Usage recording failed
         }
+    }
+
+    /**
+     * バッファリングされた使用統計をストレージに書き込み（直列化）
+     */
+    _flushUsageBuffer() {
+        if (!this._usageBuffer || this._usageBuffer.length === 0) return;
+        if (this._isFlushing) return;
+        this._isFlushing = true;
+        const buffer = this._usageBuffer;
+        this._usageBuffer = [];
+
+        chrome.storage.local.get(['tabListUsage'], (result) => {
+            if (chrome.runtime.lastError) {
+                this._usageBuffer = buffer.concat(this._usageBuffer || []);
+                this._isFlushing = false;
+                return;
+            }
+            const currentUsage = result.tabListUsage || [];
+            currentUsage.push(...buffer);
+            const recentUsage = currentUsage.slice(-100);
+            chrome.storage.local.set({ tabListUsage: recentUsage }, () => {
+                if (chrome.runtime.lastError) {
+                    this._usageBuffer = buffer.concat(this._usageBuffer || []);
+                    this._isFlushing = false;
+                    return;
+                }
+                this._isFlushing = false;
+                // flush中に追加されたバッファがあれば再flush
+                if (this._usageBuffer && this._usageBuffer.length > 0) {
+                    this._flushUsageBuffer();
+                }
+            });
+        });
     }
 
     /**
@@ -609,17 +682,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         // 詳細なエラー情報の表示
         const previewContent = document.getElementById('preview-content');
         if (previewContent) {
-            const errorDetails = error.message || '不明なエラー';
-            previewContent.innerHTML = `
-                <div class="error" role="alert">
-                    <div class="error-icon">❌</div>
-                    <div class="error-message">初期化に失敗しました</div>
-                    <div class="error-details">${errorDetails}</div>
-                    <button onclick="window.location.reload()" class="error-retry">
-                        🔄 リロード
-                    </button>
-                </div>
-            `;
+            const errorEl = document.createElement('div');
+            errorEl.className = 'error';
+            errorEl.setAttribute('role', 'alert');
+
+            const iconEl = document.createElement('div');
+            iconEl.className = 'error-icon';
+            iconEl.textContent = '❌';
+            errorEl.appendChild(iconEl);
+
+            const msgEl = document.createElement('div');
+            msgEl.className = 'error-message';
+            msgEl.textContent = '初期化に失敗しました';
+            errorEl.appendChild(msgEl);
+
+            const detailEl = document.createElement('div');
+            detailEl.className = 'error-details';
+            detailEl.textContent = error.message || '不明なエラー';
+            errorEl.appendChild(detailEl);
+
+            const reloadBtn = document.createElement('button');
+            reloadBtn.className = 'error-retry';
+            reloadBtn.textContent = '🔄 リロード';
+            reloadBtn.addEventListener('click', () => window.location.reload());
+            errorEl.appendChild(reloadBtn);
+
+            while (previewContent.firstChild) {
+                previewContent.removeChild(previewContent.firstChild);
+            }
+            previewContent.appendChild(errorEl);
         }
         
         // エラー報告

@@ -9,7 +9,8 @@
     "storage",
     "contextMenus",
     "notifications",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "action": {
     "default_popup": "popup/popup.html",
@@ -26,6 +27,9 @@
     "32": "assets/icons/icon-32.png",
     "48": "assets/icons/icon-48.png",
     "128": "assets/icons/icon-128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; style-src 'self'; img-src 'self' https:;"
   },
   "background": {
     "service_worker": "background/service-worker.js"

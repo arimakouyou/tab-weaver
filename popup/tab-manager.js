@@ -110,10 +110,8 @@ class TabManager {
             .map(tab => this.createTabInfo(tab))
             .sort(this.compareTabsPriority.bind(this));
 
-        // セキュリティ検証
-        this.validateProcessedTabs(processedTabs);
-
-        return processedTabs;
+        // セキュリティ検証（無効データをフィルタリング）
+        return this.validateProcessedTabs(processedTabs);
     }
 
     /**
@@ -179,10 +177,12 @@ class TabManager {
      * @param {Array<TabInfo>} tabs - 検証するタブデータ
      */
     validateProcessedTabs(tabs) {
-        tabs.forEach((tab) => {
+        return tabs.filter(tab => {
             if (!tab.id || !tab.title || !tab.url) {
-                // Invalid tab data detected
+                console.warn('Invalid tab data detected, filtering out:', tab.id);
+                return false;
             }
+            return true;
         });
     }
 
@@ -200,8 +200,17 @@ class TabManager {
             return 'Untitled';
         }
         
-        // XSS対策: HTMLタグを除去
-        let cleanTitle = title.replace(/<[^>]*>/g, '').trim();
+        // XSS対策: HTMLエンティティをデコード → HTMLタグを除去（順序重要）
+        // エンティティ化されたタグ（&lt;script&gt;等）をデコード後に除去するため
+        let cleanTitle = title
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&nbsp;/g, ' ')
+            .replace(/<[^>]*>/g, '')
+            .trim();
         
         // 長さ制限（パフォーマンスと可読性のため）
         const maxLength = 60;
@@ -220,24 +229,8 @@ class TabManager {
      * @returns {string} エスケープ済みテキスト
      */
     escapeMarkdown(text) {
-        // Markdown特殊文字をエスケープ
-        return text
-            .replace(/\\/g, '\\\\')  // バックスラッシュ
-            .replace(/\*/g, '\\*')   // アスタリスク
-            .replace(/_/g, '\\_')    // アンダースコア
-            .replace(/\[/g, '\\[')   // 左角括弧
-            .replace(/\]/g, '\\]')   // 右角括弧
-            .replace(/\(/g, '\\(')   // 左丸括弧
-            .replace(/\)/g, '\\)')   // 右丸括弧
-            .replace(/-/g, '\\-')    // ハイフン
-            .replace(/\+/g, '\\+')   // プラス
-            .replace(/\./g, '\\.')   // ドット
-            .replace(/!/g, '\\!')    // エクスクラメーション
-            .replace(/#/g, '\\#')    // ハッシュ
-            .replace(/`/g, '\\`')    // バッククォート
-            .replace(/>/g, '\\>')    // 大なり
-            .replace(/</g, '\\<')    // 小なり
-            .replace(/\|/g, '\\|');  // パイプ
+        // Markdown特殊文字をエスケープ（1パスで処理）
+        return text.replace(/([\\*_\[\]()\-+.!#`><|])/g, '\\$1');
     }
 
     /**
@@ -551,8 +544,9 @@ class TabManager {
     sanitizeUrl(url) {
         try {
             const urlObj = new URL(url);
-            // セキュリティ: javascript:プロトコルを除外
-            if (urlObj.protocol === 'javascript:') {
+            // セキュリティ: 危険なプロトコルをブロック（isValidTabとの二重防御）
+            const dangerousProtocols = ['javascript:', 'vbscript:', 'data:'];
+            if (dangerousProtocols.includes(urlObj.protocol)) {
                 return 'about:blank';
             }
             return url;

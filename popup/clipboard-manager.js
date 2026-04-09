@@ -202,7 +202,12 @@ class ClipboardManager {
      * @returns {string} ユニークID
      */
     generateId() {
-        return Math.random().toString(36).substr(2, 9);
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+            const bytes = new Uint8Array(5);
+            crypto.getRandomValues(bytes);
+            return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('').substring(0, 9);
+        }
+        return Math.floor(Math.random() * Math.pow(36, 9)).toString(36).padStart(9, '0');
     }
 
     /**
