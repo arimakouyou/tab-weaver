@@ -123,7 +123,7 @@ describe('Service Worker Integration Tests', () => {
       
       expect(chrome.notifications.create).toHaveBeenCalledWith({
         type: 'basic',
-        iconUrl: '../assets/icons/icon-48.png',
+        iconUrl: 'assets/icons/icon-48.png',
         title: '現在のタブをコピーしました',
         message: expect.stringContaining('Test Page')
       });
@@ -209,7 +209,7 @@ describe('Service Worker Integration Tests', () => {
       await testUtils.waitFor(10);
       
       expect(chrome.storage.local.get).toHaveBeenCalledWith(['tabListStats'], expect.any(Function));
-      expect(sendResponse).toHaveBeenCalled();
+      expect(sendResponse).toHaveBeenCalledWith(mockStats);
     });
 
     test('キャッシュクリアメッセージを処理する', async () => {

@@ -132,7 +132,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // 現在のタブをMarkdownでコピー
 async function copyCurrentTabAsMarkdown(tab) {
     try {
-        const markdown = `- [${escapeMarkdown(tab.title)}](${tab.url})`;
+        const markdown = `- [${escapeMarkdown(tab.title)}](${sanitizeUrl(tab.url)})`;
         
         // Service Worker環境でのクリップボードアクセス
         await writeToClipboard(markdown);
@@ -155,7 +155,7 @@ async function copyAllTabsAsMarkdown() {
         
         tabs.forEach(tab => {
             if (tab.url && !tab.url.startsWith('chrome://')) {
-                markdown += `- [${escapeMarkdown(tab.title)}](${tab.url})\n`;
+                markdown += `- [${escapeMarkdown(tab.title)}](${sanitizeUrl(tab.url)})\n`;
             }
         });
         
@@ -214,6 +214,20 @@ async function writeToClipboardViaContentScript(text) {
     }
 }
 
+// URLサニタイズ処理（危険なプロトコルをブロック）
+function sanitizeUrl(url) {
+    try {
+        const urlObj = new URL(url);
+        const dangerousProtocols = ['javascript:', 'vbscript:', 'data:'];
+        if (dangerousProtocols.includes(urlObj.protocol)) {
+            return 'about:blank';
+        }
+        return url;
+    } catch {
+        return 'about:blank';
+    }
+}
+
 // Markdownエスケープ処理
 function escapeMarkdown(text) {
     if (!text || typeof text !== 'string') return 'Untitled';
@@ -230,7 +244,7 @@ function showNotification(title, message) {
         if (settings.showNotifications !== false) {
             chrome.notifications.create({
                 type: 'basic',
-                iconUrl: '../assets/icons/icon-48.png',
+                iconUrl: 'assets/icons/icon-48.png',
                 title: title,
                 message: message
             });
