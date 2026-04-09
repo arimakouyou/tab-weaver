@@ -106,12 +106,14 @@ global.PerformanceObserver = jest.fn().mockImplementation(() => ({
 if (typeof global.crypto === 'undefined') {
   global.crypto = {};
 }
-global.crypto.getRandomValues = jest.fn((array) => {
-  for (let i = 0; i < array.length; i++) {
-    array[i] = Math.floor(Math.random() * 4294967296);
-  }
-  return array;
-});
+if (!global.crypto.getRandomValues) {
+  global.crypto.getRandomValues = jest.fn((array) => {
+    for (let i = 0; i < array.length; i++) {
+      array[i] = Math.floor(Math.random() * 4294967296);
+    }
+    return array;
+  });
+}
 
 // URL のモック（Node.js環境では利用可能だが念のため）
 if (typeof URL === 'undefined') {

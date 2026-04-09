@@ -382,10 +382,8 @@ describe('Popup Integration Tests', () => {
       }
       await testUtils.waitFor(200);
 
-      // タイムアウトを発生させる
-      chrome.tabs.query.mockImplementation(() =>
-        new Promise(resolve => setTimeout(resolve, 15000))
-      );
+      // 応答しないPromiseを返してloadTabData()側のタイムアウトを発生させる
+      chrome.tabs.query.mockImplementation(() => new Promise(() => {}));
       controller.tabManager.clearCache();
       await controller.loadTabData();
 
