@@ -200,14 +200,16 @@ class TabManager {
             return 'Untitled';
         }
         
-        // XSS対策: HTMLタグを除去 + HTMLエンティティをデコード
-        let cleanTitle = title.replace(/<[^>]*>/g, '')
+        // XSS対策: HTMLエンティティをデコード → HTMLタグを除去（順序重要）
+        // エンティティ化されたタグ（&lt;script&gt;等）をデコード後に除去するため
+        let cleanTitle = title
             .replace(/&amp;/g, '&')
             .replace(/&lt;/g, '<')
             .replace(/&gt;/g, '>')
             .replace(/&quot;/g, '"')
             .replace(/&#39;/g, "'")
             .replace(/&nbsp;/g, ' ')
+            .replace(/<[^>]*>/g, '')
             .trim();
         
         // 長さ制限（パフォーマンスと可読性のため）

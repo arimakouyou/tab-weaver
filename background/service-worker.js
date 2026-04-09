@@ -153,8 +153,13 @@ async function copyAllTabsAsMarkdown() {
         
         let markdown = `## 📋 開いているタブ (${timestamp})\n\n`;
         
+        // popup側のTabManager.excludePatternsと同等のフィルタ
+        const excludePatterns = [
+            'chrome://', 'chrome-extension://', 'moz-extension://',
+            'edge://', 'opera://', 'about:', 'data:'
+        ];
         tabs.forEach(tab => {
-            if (tab.url && !tab.url.startsWith('chrome://')) {
+            if (tab.url && !excludePatterns.some(p => tab.url.startsWith(p))) {
                 markdown += `- [${escapeMarkdown(tab.title)}](${sanitizeUrl(tab.url)})\n`;
             }
         });
